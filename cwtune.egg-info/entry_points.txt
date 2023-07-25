@@ -1,0 +1,2 @@
+[console_scripts]
+cwtune = cwtune.cli:main
