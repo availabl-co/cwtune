@@ -41,7 +41,7 @@ setup(
     packages=find_packages(include=['cwtune', 'cwtune.*']),
     test_suite='tests',
     tests_require=test_requirements,
-    url='https://github.com/Arran_McCabe/cwtune',
+    url='https://github.com/availabl-co/cwtune',
     version='0.1.0',
     zip_safe=False,
 )
