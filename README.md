@@ -7,6 +7,10 @@
 
 Thresholds for these monitors are usually selected by trial and error, which can lead to unnecessary noise. `cwtune` uses historical data to backtest and suggest optimized thresholds, ensuring your alarms are tuned to the right level. This reduces unnecessary noise and increases the value of your alerts.
 
+## Requirements
+- [aws cli](https://aws.amazon.com/cli/)
+- python 3.6+
+
 ## Installation
 
 You can install `cwtune` via pip:
