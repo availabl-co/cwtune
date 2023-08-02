@@ -39,7 +39,7 @@ Here's what each argument does:
 
 - `--alarm-type`: The type of alarm, either greater than (`gt`) or less than (`lt`).
 - `--period`: The period of the CloudWatch metric in minutes. Can be `1`, `5`, or `60`.
-- `--statistic`: The statistic of the CloudWatch metric. Can be `Sum`, `Average`, `Min`, or `Max`.
+- `--statistic`: The statistic of the CloudWatch metric. Can be `Sum`, `Average`, `Min`, `Max`, `SampleCount`, `p50`, `p95` or `p99`.
 - `--region`: The region of the CloudWatch metric. Can be any valid AWS region.
 - `--aws-profile`: (Optional) The profile configured in AWS CLI to use for making API calls. Defaults to `default`.
 
@@ -48,6 +48,9 @@ For example, to configure a greater than alarm with a 1-minute period, using the
 ```bash
 cwtune --alarm-type gt --period 1 --statistic Sum --region us-west-1 --aws-profile default
 ```
+
+## Example Plot
+<img width="1544" alt="Screen Shot 2023-08-02 at 15 48 45 p m" src="https://github.com/availabl-co/cwtune/assets/89125058/1dd56b83-36c4-46d2-a40e-f29cfb657fdb">
 
 ## Contributing
 
