@@ -1,13 +1,16 @@
 import boto3
 import click
-from utils import shorten_url
+from .utils import shorten_url
 
-def list_metrics(aws_profile=None, region='us-east-1'):
-    """List all CloudWatch metrics."""
+def cw_client(aws_profile="default", region='us-east-1'):
+    """Create a CloudWatch client."""
     if aws_profile:
-        boto3.setup_default_session(
-            profile_name=aws_profile, region_name=region)
-    client = boto3.client('cloudwatch', region_name=region)
+        boto3.setup_default_session(profile_name=aws_profile, region_name=region)
+    
+    return boto3.client('cloudwatch', region_name=region)
+
+def list_metrics(client):
+    """List all CloudWatch metrics."""
 
     # page through the results
     metrics = []
@@ -30,13 +33,8 @@ def list_metrics(aws_profile=None, region='us-east-1'):
     metrics = sorted(metrics, key=lambda x: (x['Namespace'], x['MetricName']))
     return metrics
 
-def get_metric_data(start, end, metric_name, metric_namespace, dimensions, period, statistic, aws_profile=None, region='us-east-1'):
+def get_metric_data(start, end, metric_name, metric_namespace, dimensions, period, statistic, client):
     """Get metric data from CloudWatch."""
-    if aws_profile:
-        boto3.setup_default_session(
-            profile_name=aws_profile, region_name=region)
-    client = boto3.client('cloudwatch', region_name=region)
-
     try:
         response = client.get_metric_data(
             MetricDataQueries=[
@@ -68,22 +66,11 @@ def get_metric_data(start, end, metric_name, metric_namespace, dimensions, perio
 
     return results
 
-def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, aws_profile=None, region='us-east-1', statistic='Sum', period=5, min_duration=3):
+def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, client, statistic='Sum', period=5, window_size=3):
     """Create a CloudWatch alarm for the given metric."""
 
-    if aws_profile:
-        session = boto3.session.Session(profile_name=aws_profile, region_name=region)
-        client = session.client('cloudwatch')
-    else:
-        client = boto3.client('cloudwatch', region_name=region)
-
-    if alarm_type == 'gt':
-        alarm_type = 'GreaterThanThreshold'
-    elif alarm_type == 'lt':
-        alarm_type = 'LessThanThreshold'
-
     # suggest actions based on exisitng alarms
-    alarms = list_alarms(aws_profile, region)
+    alarms = list_alarms(client)
     actions = set()
 
     for alarm in alarms:
@@ -117,12 +104,12 @@ def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, 
             Dimensions=dimensions,
             Statistic=statistic,
             Period=period * 60,
-            DatapointsToAlarm=min_duration,
-            EvaluationPeriods=min_duration,
+            DatapointsToAlarm=window_size,
+            EvaluationPeriods=window_size,
             Threshold=threshold,
             ActionsEnabled=True,
             AlarmActions=actions,
-            ComparisonOperator=alarm_type,
+            ComparisonOperator=alarm_type.to_cw_operator(),
             TreatMissingData='missing',
             Tags=[
                 {
@@ -133,6 +120,8 @@ def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, 
         )
 
         click.echo(f"Successfully created/updated alarm")
+
+        region = client.meta.region_name
         link = f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#alarm:alarmFilter=ANY;name={name}%20{alarm_type}%20{threshold}"
         click.echo(f"View alarm: {shorten_url(link)}")
 
@@ -142,12 +131,8 @@ def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, 
 
     return 0
 
-def list_alarms(aws_profile=None, region='us-east-1'):
+def list_alarms(client):
     """List all CloudWatch alarms."""
-    if aws_profile:
-        boto3.setup_default_session(
-            profile_name=aws_profile, region_name=region)
-    client = boto3.client('cloudwatch', region_name=region)
 
     # page through the results
     alarms = []

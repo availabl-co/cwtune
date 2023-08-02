@@ -15,6 +15,7 @@ def shorten_url(url):
         return url
 
 
+# This should probaly extacted to a standalone lib as it is generaly useful
 def create_cloudwatch_link(namespace: str, metric_name: str, start: datetime, end: datetime, dimensions: list, threshold: float, region: str, statistic: str, period: int, shorten=True) -> str:
     """Create a link to the CloudWatch graph for the given metric."""
     base_url = f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#metricsV2?"

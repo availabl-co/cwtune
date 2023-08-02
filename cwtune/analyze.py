@@ -1,17 +1,18 @@
+from enum import Enum
 import click
 from datetime import timedelta
 from terminaltables import AsciiTable
 from thefuzz import fuzz
 import json
 import math
-from utils import create_cloudwatch_link, format_timestamp, select_range
-from aws import list_metrics, get_metric_data, create_cloudwatch_alarm
-from timeseries import zero_pad, get_breaches, longest_breach
+from .utils import create_cloudwatch_link, format_timestamp, select_range
+from .aws import list_metrics, get_metric_data, create_cloudwatch_alarm, cw_client
+from .timeseries import zero_pad, get_breaches, longest_breach, ThresholdAdjustment
 
 # Define constants
 WEIGHTS = {'Namespace': 0.5, 'MetricName': 0.3, 'Dimensions': 0.3}
 MAX_ITERATIONS = 100
-
+NUM_SEARCH_RESULTS = 5
 
 def prompt_metric_search(metrics):
     """Prompts the user for a metric search and returns a selected metric."""
@@ -24,7 +25,7 @@ def prompt_metric_search(metrics):
                          WEIGHTS['MetricName'] * fuzz.token_set_ratio(search, metric['MetricName']) +
                          WEIGHTS['Dimensions'] * fuzz.token_set_ratio(search, json.dumps(metric['Dimensions'])), reverse=True)
 
-        for i, metric in enumerate(metrics[:5]):
+        for i, metric in enumerate(metrics[:NUM_SEARCH_RESULTS]):
             click.echo(
                 f"{i + 1}: {metric['Namespace']} {metric['MetricName']} {json.dumps({dimension['Name']: dimension['Value'] for dimension in metric['Dimensions']})}")
 
@@ -33,24 +34,23 @@ def prompt_metric_search(metrics):
         selected_metric = click.prompt('Please enter a number to select a metric', type=int)
         click.echo()
 
-        if selected_metric == 6:
+        if selected_metric == NUM_SEARCH_RESULTS + 1:
             continue
 
-        if selected_metric < 1 or selected_metric > 5:
+        if selected_metric < 1 or selected_metric > NUM_SEARCH_RESULTS:
             click.echo('Invalid selection.')
             continue
 
         return metrics[selected_metric - 1]
 
 
-def retrieve_and_pad_data(metric, period, statistic, aws_profile, region):
+def retrieve_and_pad_data(metric, period, statistic, client):
     """Retrieves and pads metric data."""
     start, end = select_range()
 
     click.echo(f"Retrieving data from {format_timestamp(start)} to {format_timestamp(end)}.")
 
-    data = get_metric_data(start, end, metric['MetricName'], metric['Namespace'],
-                           metric['Dimensions'], period, statistic, aws_profile, region)
+    data = get_metric_data(start, end, metric['MetricName'], metric['Namespace'], metric['Dimensions'], period, statistic, client)
     click.echo(f"Retrieved {len(data)} data points.")
 
     if len(data) == 0:
@@ -62,12 +62,12 @@ def retrieve_and_pad_data(metric, period, statistic, aws_profile, region):
     return data, start, end
 
 
-def calculate_threshold_and_breaches(data, alarm_type, min_duration, max_alerts):
+def calculate_threshold_and_breaches(data, alarm_type, window_size, max_alerts):
     """Calculates threshold and breaches for the given data."""
     # Initial values
-    threshold = 0
+    threshold = 1 if alarm_type.is_lt() else 0
     breaches = get_breaches(data, threshold, alarm_type,
-                            min_duration, int(min_duration/2))
+                            window_size, int(window_size/2))
 
     values = [value for timestamp, value in data]
     sum_values = sum(values)
@@ -79,10 +79,10 @@ def calculate_threshold_and_breaches(data, alarm_type, min_duration, max_alerts)
         click.echo('Starting binary search for threshold.')
 
         # mean +/- 5 standard deviations depending on the alarm type
-        if alarm_type == 'gt':
+        if alarm_type.is_gt():
             threshold = math.ceil(sum_values / len(values) + 5 * std_dev)
-        elif alarm_type == 'lt':
-            threshold = math.ceil(sum_values / len(values) - 5 * std_dev)
+        elif alarm_type.is_lt():
+            threshold = max(math.ceil(sum_values / len(values) - 5 * std_dev), 1)
 
         min_threshold = min(values)
         max_threshold = max(values) * 2
@@ -92,7 +92,7 @@ def calculate_threshold_and_breaches(data, alarm_type, min_duration, max_alerts)
                 f"Iteration {i + 1}. Evaluating threshold of {threshold}.")
             threshold = math.ceil((min_threshold + max_threshold) / 2)
             breaches = get_breaches(
-                data, threshold, alarm_type, min_duration, int(min_duration/2))
+                data, threshold, alarm_type, window_size, int(window_size/2))
 
             if len(breaches) > max_alerts:
                 min_threshold = threshold
@@ -106,89 +106,91 @@ def calculate_threshold_and_breaches(data, alarm_type, min_duration, max_alerts)
     return threshold, breaches
 
 
-def output_rating_and_adjustment(metric, data, alarm_type, threshold, min_duration, breaches, start, region, statistic, period):
+def output_rating_and_adjustment(metric, data, alarm_type, threshold, window_size, breaches, start, region, statistic, period):
     """Handles output rating and adjustment based on user feedback."""
+
+    # Create an instance of ThresholdAdjustment
+    adjustment = ThresholdAdjustment(threshold, breaches, data, alarm_type, window_size)
+
+    # Define option map
+    option_map = {
+        1: {
+            "description": "Too many alerts",
+            "action": adjustment.decrease_sensitivity,
+        },
+        2: {
+            "description": "Too few alerts",
+            "action": adjustment.increase_sensitivity,
+        },
+        3: {
+            "description": "Incident(s) too short",
+            "action": adjustment.increase_window_size,
+        },
+        4: {
+            "description": "Incident(s) alerted too late",
+            "action": adjustment.decrease_window_size,
+        },
+        5: {
+            "description": "Just right",
+            "action": None,  # No action for this option
+        },
+    }
+
     while True:
-        if threshold > 1:
-            threshold = math.ceil(threshold)
+        if adjustment.threshold > 1:
+            adjustment.threshold = math.ceil(adjustment.threshold)
 
-        click.echo(f"X {alarm_type} {threshold} for {int(min_duration/2)} in {min_duration} datapoints would have resulted in {len(breaches)} breaches since {format_timestamp(start)}.")
-
+        click.echo(f"X {'>' if alarm_type.is_gt() else '<'} {adjustment.threshold} for {int(adjustment.window_size/2)} in {adjustment.window_size} datapoints would have triggered {len(adjustment.breaches)} alerts.")
         table_data = [['Start', 'End', 'Duration', 'Link']]
 
-        for breach in breaches:
+        for breach in adjustment.breaches:
             duration = breach['end'] - breach['start']
             link = create_cloudwatch_link(
                 metric['Namespace'], metric['MetricName'], breach['start'],
-                breach['end'], metric['Dimensions'], threshold, region, statistic, period
+                breach['end'], metric['Dimensions'], adjustment.threshold, region, statistic, period
             )
             table_data.append([format_timestamp(breach['start']),
                               format_timestamp(breach['end']), duration, link])
 
         if len(table_data) > 1:
-            table = AsciiTable(table_data)
+            table = AsciiTable(table_data) 
             click.echo(table.table)
             click.echo()
 
         click.echo("Rate the output")
-        click.echo("1: Too many alerts")
-        click.echo("2: Too few alerts")
+        for option, details in option_map.items():
+            click.echo(f"{option}: {details['description']}")
 
-        if len(breaches) > 0:
-            click.echo("3: Incident(s) too short")
-            click.echo("4: Incident(s) alerted too late")
-
-        click.echo("5: Just right")
-
-        rating = click.prompt(
-            'Please enter a number to rate the output', type=int)
+        rating = click.prompt('Please enter a number to rate the output', type=int)
         click.echo()
 
-        if rating == 1:
-            click.echo("Increasing threshold by 10%")
-            threshold = math.ceil(threshold * 1.1)
-            breaches = get_breaches(
-                data, threshold, alarm_type, min_duration, int(min_duration/2))
-        elif rating == 2:
-            click.echo("Decreasing threshold")
-            if threshold < 10:
-                threshold = threshold - 1
+        selected_option = option_map.get(rating)
+        if selected_option:
+            action = selected_option.get('action')
+            if action:
+                action()
             else:
-                threshold = math.ceil(threshold * 0.9)
-            breaches = get_breaches(
-                data, threshold, alarm_type, min_duration, int(min_duration/2))
-        elif rating == 3:
-            click.echo("Increasing minimum duration by 1 minute")
-            min_duration += 1
-            breaches = get_breaches(
-                data, threshold, alarm_type, min_duration, int(min_duration/2))
-        elif rating == 4:
-            if min_duration == 1:
-                click.echo("Minimum duration cannot be decreased further")
-                continue
-            click.echo("Decreasing minimum duration by 1 minute")
-            min_duration -= 1
-            breaches = get_breaches(
-                data, threshold, alarm_type, min_duration, int(min_duration/2))
-        elif rating == 5:
-            break
+                break
 
-    return threshold, min_duration
+    return adjustment.threshold, adjustment.window_size
 
 
-def ask_to_create_alarm(metric, threshold, alarm_type, aws_profile, region, statistic, period, min_duration):
+def ask_to_create_alarm(metric, threshold, alarm_type, client, statistic, period, window_size):
     """Asks the user if they want to create a CloudWatch alarm and creates it if they do."""
     if click.confirm('Create/Update an alarm for this metric?', default=True):
         create_cloudwatch_alarm(
             metric['MetricName'], metric['Namespace'], metric['Dimensions'], threshold, alarm_type,
-            aws_profile=aws_profile, region=region, statistic=statistic, period=period, min_duration=min_duration
+            client, statistic=statistic, period=period, window_size=window_size
         )
 
 
-def run(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east-1', min_duration=5, max_alerts=5):
+def run(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east-1', window_size=5, max_alerts=5):
     """Select threshold for CloudWatch metrics."""
+
+    client = cw_client(aws_profile, region)
+
     try:
-        metrics = list_metrics(aws_profile, region)
+        metrics = list_metrics(client)
     except Exception as e:
         click.echo(f"Failed to list metrics: {e}")
         return 1  # Non-zero status code to indicate an error
@@ -200,8 +202,7 @@ def run(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east
         return 1
 
     try:
-        data, start, end = retrieve_and_pad_data(
-            metric, period, statistic, aws_profile, region)
+        data, start, end = retrieve_and_pad_data(metric, period, statistic, client)
     except Exception as e:
         click.echo(f"Failed to retrieve and pad data: {e}")
         return 1
@@ -210,23 +211,21 @@ def run(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east
         return 0
 
     try:
-        threshold, breaches = calculate_threshold_and_breaches(
-            data, alarm_type, min_duration, max_alerts)
+        threshold, breaches = calculate_threshold_and_breaches(data, alarm_type, window_size, max_alerts)
     except Exception as e:
         click.echo(f"Failed to calculate threshold and breaches: {e}")
         return 1
 
     try:
-        threshold, min_duration = output_rating_and_adjustment(
-            metric, data, alarm_type, threshold, min_duration, breaches, start, region, statistic, period
+        threshold, window_size = output_rating_and_adjustment(
+            metric, data, alarm_type, threshold, window_size, breaches, start, region, statistic, period
         )
     except Exception as e:
         click.echo(f"Failed to adjust output based on rating: {e}")
         return 1
 
     try:
-        ask_to_create_alarm(metric, threshold, alarm_type,
-                            aws_profile, region, statistic, period, min_duration)
+        ask_to_create_alarm(metric, threshold, alarm_type, client, statistic, period, window_size)
     except Exception as e:
         click.echo(f"Failed to create alarm: {e}")
         return 1
