@@ -60,11 +60,12 @@ class CLIProfile(click.Choice):
 @click.command()
 @click.option('--alarm-type', prompt='Alarm Type', type=AlarmTypeChoice(), help='The type of alarm, greater than (gt) or less than (lt).')
 @click.option('--period', prompt='Period (Mins)', default="5", type=click.Choice(["1", "5", "60"]), help='The period of the CloudWatch metric in minutes.')
-@click.option('--statistic', prompt='Statistic', default='Sum', type=click.Choice(['Sum', 'Average', 'Min', 'Max']), help='The statistic of the CloudWatch metric.')
+@click.option('--statistic', prompt='Statistic', default='Sum', type=click.Choice(['Sum', 'Average', 'SampleCount', 'Min', 'Max', 'p50', 'p95', 'p99']), help='The statistic of the CloudWatch metric.')
 @click.option('--region', prompt='Region', type=AWSRegion(), default="us-west-1", help='The region of the CloudWatch metric.')
 @click.option('--aws-profile', prompt='AWS CLI Profile', type=CLIProfile(), default="default", help='(Optional) The profile configured in AWS CLI to use for making API calls.')
 def main(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east-1'):
     run(AlarmType.from_string(alarm_type), aws_profile, int(period), statistic=statistic, region=region)
+
     return 0
 
 
