@@ -67,7 +67,7 @@ def calculate_threshold_and_breaches(data, alarm_type, window_size, max_alerts):
     # Initial values
     threshold = 1 if alarm_type.is_lt() else 0
     breaches = get_breaches(data, threshold, alarm_type,
-                            window_size, int(window_size/2))
+                            window_size, math.ceil(window_size / 2))
 
     values = [value for timestamp, value in data]
     sum_values = sum(values)
@@ -92,7 +92,7 @@ def calculate_threshold_and_breaches(data, alarm_type, window_size, max_alerts):
                 f"Iteration {i + 1}. Evaluating threshold of {threshold}.")
             threshold = math.ceil((min_threshold + max_threshold) / 2)
             breaches = get_breaches(
-                data, threshold, alarm_type, window_size, int(window_size/2))
+                data, threshold, alarm_type, window_size, math.ceil(window_size / 2))
 
             if len(breaches) > max_alerts:
                 min_threshold = threshold
@@ -123,11 +123,11 @@ def output_rating_and_adjustment(metric, data, alarm_type, threshold, window_siz
             "action": adjustment.increase_sensitivity,
         },
         3: {
-            "description": "Incident(s) too short",
+            "description": "Too many flapping alerts",
             "action": adjustment.increase_window_size,
         },
         4: {
-            "description": "Incident(s) alerted too late",
+            "description": "Alets are too slow to trigger",
             "action": adjustment.decrease_window_size,
         },
         5: {
@@ -184,10 +184,11 @@ def ask_to_create_alarm(metric, threshold, alarm_type, client, statistic, period
         )
 
 
-def run(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east-1', window_size=5, max_alerts=5):
+def run(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east-1', window_size=5, max_alerts=5, client=None):
     """Select threshold for CloudWatch metrics."""
 
-    client = cw_client(aws_profile, region)
+    if not client:
+        client = cw_client(aws_profile, region)
 
     try:
         metrics = list_metrics(client)

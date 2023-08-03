@@ -1,5 +1,6 @@
 import boto3
 import click
+import math
 from .utils import shorten_url
 
 def cw_client(aws_profile="default", region='us-east-1'):
@@ -96,15 +97,17 @@ def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, 
             actions = [list(actions)[action-1]]
 
     try:
+        type_str = "Greater Than" if alarm_type.is_gt() else "Less Than"
+
         response = client.put_metric_alarm(
-            AlarmName=f"{name} {alarm_type} {threshold}",
-            AlarmDescription=f"Created by availabl.ai/cwtune for {name} {alarm_type} {threshold}",
+            AlarmName=f"{name} {type_str} {threshold}",
+            AlarmDescription=f"Created by availabl.ai/cwtune for {name} {type_str} {threshold}",
             MetricName=name,
             Namespace=namespace,
             Dimensions=dimensions,
             Statistic=statistic,
             Period=period * 60,
-            DatapointsToAlarm=window_size,
+            DatapointsToAlarm=math.ceil(window_size / 2),
             EvaluationPeriods=window_size,
             Threshold=threshold,
             ActionsEnabled=True,
