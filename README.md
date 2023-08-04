@@ -27,12 +27,12 @@ After installation, you can run `cwtune` from the command line:
 cwtune
 ```
 
-The tool will then guide you interactively through the process of configuring your CloudWatch alarms.
+The tool will then guide you interactively through the process of configuring your CloudWatch alarm.
 
-Alternatively, you can provide command-line arguments to configure the alarms:
+Alternatively, you can provide command-line arguments to configure the alarm:
 
 ```bash
-cwtune --alarm-type [gt|lt] --period [1|5|60] --statistic [Sum|Average|Min|Max] --region [AWS region] --aws-profile [AWS CLI profile]
+cwtune --alarm-type [gt|lt] --period [1|5|60] --statistic [Sum|Average|Min|Max|SampleCount|p50|p95|p99] --region [AWS region] --aws-profile [AWS CLI profile]
 ```
 
 Here's what each argument does:

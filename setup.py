@@ -4,7 +4,7 @@
 
 from setuptools import setup, find_packages
 
-with open('README.rst') as readme_file:
+with open('README.md') as readme_file:
     readme = readme_file.read()
 
 with open("requirements.txt", "r", encoding="utf-8") as fh:
@@ -42,6 +42,6 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/availabl-co/cwtune',
-    version='0.1.16',
+    version='0.2.0',
     zip_safe=False,
 )
