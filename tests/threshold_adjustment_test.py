@@ -159,10 +159,10 @@ class ThresholdAdjustmentTest(unittest.TestCase):
         adjustment._recalculate_breaches()
         self.assertEqual(adjustment.breaches, [
             {
-                'end': datetime(2020, 1, 1, 0, 6, tzinfo=timezone.utc),
-                'start': datetime(2020, 1, 1, 0, 2, tzinfo=timezone.utc),
-                'status': 'closed',
-                'values': [100, 100, 100, 0]
+                'start': datetime(2020, 1, 1, 0, 2, tzinfo=timezone.utc), 
+                'end': datetime(2020, 1, 1, 0, 5, tzinfo=timezone.utc), 
+                'status': 'closed', 
+                'values': [100, 100, 100]
             }
         ])
 
@@ -175,10 +175,10 @@ class ThresholdAdjustmentTest(unittest.TestCase):
         adjustment._recalculate_breaches()
         self.assertEqual(adjustment.breaches, [
             {
-              'end': datetime(2020, 1, 1, 0, 7, tzinfo=timezone.utc),
-              'start': datetime(2020, 1, 1, 0, 2, tzinfo=timezone.utc),
-              'status': 'closed',
-              'values': [100, 100, 100, 0, 0]
+                'start': datetime(2020, 1, 1, 0, 2, tzinfo=timezone.utc), 
+                'end': datetime(2020, 1, 1, 0, 6, tzinfo=timezone.utc), 
+                'status': 'closed', 
+                'values': [100, 100, 100, 0]
             }
         ])
 
@@ -191,9 +191,9 @@ class ThresholdAdjustmentTest(unittest.TestCase):
         adjustment._recalculate_breaches()
         self.assertEqual(adjustment.breaches, [
             {
-              'end': datetime(2020, 1, 1, 0, 7, tzinfo=timezone.utc),
-              'start': datetime(2020, 1, 1, 0, 3, tzinfo=timezone.utc),
-              'status': 'closed',
-              'values': [100, 100, 0, 0]
+                'start': datetime(2020, 1, 1, 0, 3, tzinfo=timezone.utc), 
+                'end': datetime(2020, 1, 1, 0, 6, tzinfo=timezone.utc), 
+                'status': 'closed', 
+                'values': [100, 100, 0]
             }
         ])

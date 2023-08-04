@@ -27,28 +27,28 @@ def eval(value, threshold, alarm_type):
     elif alarm_type.is_lt():
         return value < threshold
 
+from collections import deque
+import logging
 
 def get_breaches(data, threshold, alarm_type, window_size, time_threshold):
     """Identify the start and end of each continuous breach of the threshold."""
-
     # iterate over the data using a sliding window
     breaches = []
-    window = []
+    window = deque()
 
     for timestamp, value in data:
         window.append((timestamp, value))
 
         # remove values that are outside of the window
-        while window and window[0][0] < timestamp - timedelta(minutes=window_size):
-            window.pop(0)
-
+        while window and window[0][0] < timestamp - timedelta(minutes=window_size - 1):
+            window.popleft()
         # check if the window contains more than time_threshold breaches
-        num_breaches = 0
-        for w in window:
-            if eval(w[1], threshold, alarm_type):
-                num_breaches += 1
+        num_breaches = sum(eval(w[1], threshold, alarm_type) for w in window)
 
         if num_breaches >= time_threshold:
+            logging.debug(f"num_breaches: {num_breaches}")
+            logging.debug(f"time_threshold: {time_threshold}")
+            logging.debug(f"window: {[w[1] for w in window]}")
             # check if we are already in a breach
             if breaches and breaches[-1]['status'] == 'open':
                 breaches[-1]['end'] = timestamp
@@ -61,7 +61,13 @@ def get_breaches(data, threshold, alarm_type, window_size, time_threshold):
                 breaches[-1]['end'] = timestamp
                 breaches[-1]['status'] = 'closed'
 
+    # Ensure last breach is closed
+    if breaches and breaches[-1]['status'] == 'open':
+        breaches[-1]['end'] = data[-1][0]  # Last timestamp in data
+        breaches[-1]['status'] = 'closed'
+
     return breaches
+
 
 def longest_breach(breaches):
     """Return the length of the longest breach."""
