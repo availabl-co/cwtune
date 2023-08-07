@@ -65,24 +65,23 @@ def retrieve_and_pad_data(metric, period, statistic, client):
 def calculate_threshold_and_breaches(data, alarm_type, window_size, max_alerts):
     """Calculates threshold and breaches for the given data."""
     # Initial values
-    threshold = 1 if alarm_type.is_lt() else 0
-    breaches = get_breaches(data, threshold, alarm_type,
-                            window_size, math.ceil(window_size / 2))
-
     values = [value for timestamp, value in data]
     sum_values = sum(values)
     std_dev = sum([abs(value - sum_values / len(values))
-                  for value in values]) / len(values)
+            for value in values]) / len(values)
+
+    if alarm_type.is_gt():
+        threshold = math.ceil(sum_values / len(values) + 5 * std_dev)
+    elif alarm_type.is_lt():
+        threshold = max(math.ceil(sum_values / len(values) - 5 * std_dev), 1)
+
+    breaches = get_breaches(data, threshold, alarm_type,
+                            window_size, math.ceil(window_size / 2))
+
 
     # Threshold search when breaches are too many or too long
     if len(breaches) > max_alerts or longest_breach(breaches) > timedelta(days=2):
         click.echo('Starting binary search for threshold.')
-
-        # mean +/- 5 standard deviations depending on the alarm type
-        if alarm_type.is_gt():
-            threshold = math.ceil(sum_values / len(values) + 5 * std_dev)
-        elif alarm_type.is_lt():
-            threshold = max(math.ceil(sum_values / len(values) - 5 * std_dev), 1)
 
         min_threshold = min(values)
         max_threshold = max(values) * 2
@@ -184,7 +183,7 @@ def ask_to_create_alarm(metric, threshold, alarm_type, client, statistic, period
         )
 
 
-def run(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east-1', window_size=5, max_alerts=5, client=None):
+def run(alarm_type, aws_profile=None, period=5, statistic='Sum', region='us-east-1', window_size=5, max_alerts=11, client=None):
     """Select threshold for CloudWatch metrics."""
 
     if not client:
