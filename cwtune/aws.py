@@ -67,34 +67,39 @@ def get_metric_data(start, end, metric_name, metric_namespace, dimensions, perio
 
     return results
 
-def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, client, statistic='Sum', period=5, window_size=3):
-    """Create a CloudWatch alarm for the given metric."""
-
-    # suggest actions based on exisitng alarms
+def get_suggested_actions(client):
     alarms = list_alarms(client)
     actions = set()
-
     for alarm in alarms:
         if len(alarm['AlarmActions']) > 0:
             for action in alarm['AlarmActions']:
                 actions.add(action)
+    return list(actions)
 
-    if len(actions) > 0:
-        click.echo("Select and action for the alarm:")
-        for i, action in enumerate(actions):
-            click.echo(f"{i+1}. {action}")
-        click.echo(f"{len(actions)+1}. Provide SNS Topic ARN")
+def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, client, statistic='Sum', period=5, window_size=3):
+    """Create a CloudWatch alarm for the given metric."""
 
-        click.echo(f"{len(actions)+2}. None of the above")
-        action = click.prompt("Action", type=int, default=len(actions)+1)
+    # Get suggested actions
+    suggested_actions = get_suggested_actions(client)
+    selected_actions = []
 
-        if action == len(actions)+1:
-            actions= [click.prompt("SNS Topic ARN", type=str)]
+    click.echo("Select an action for the alarm:")
+    for i, action in enumerate(suggested_actions):
+        click.echo(f"{i+1}. {action}")
 
-        elif action == len(actions)+2:
-            actions = []
-        else:
-            actions = [list(actions)[action-1]]
+    custom_arn_option = len(suggested_actions) + 1
+    none_option = len(suggested_actions) + 2
+
+    click.echo(f"{custom_arn_option}. Provide SNS Topic ARN")
+    click.echo(f"{none_option}. No Action")
+    action_choice = click.prompt("Select an action from above", type=int, default=custom_arn_option)
+
+    if action_choice == custom_arn_option:
+        selected_actions = [click.prompt("SNS Topic ARN", type=str)]
+    elif action_choice == none_option:
+        selected_actions = []
+    elif action_choice >= 1 and action_choice <= len(suggested_actions):
+        selected_actions = [suggested_actions[action_choice-1]]
 
     try:
         type_str = "Greater Than" if alarm_type.is_gt() else "Less Than"
@@ -111,7 +116,7 @@ def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, 
             EvaluationPeriods=window_size,
             Threshold=threshold,
             ActionsEnabled=True,
-            AlarmActions=actions,
+            AlarmActions=selected_actions,
             ComparisonOperator=alarm_type.to_cw_operator(),
             TreatMissingData='missing',
             Tags=[
@@ -125,7 +130,7 @@ def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, 
         click.echo(f"Successfully created/updated alarm")
 
         region = client.meta.region_name
-        link = f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#alarm:alarmFilter=ANY;name={name}%20{alarm_type}%20{threshold}"
+        link = f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#alarm:alarmFilter=ANY;name={name}%20{type_str}%20{threshold}"
         click.echo(f"View alarm: {shorten_url(link)}")
 
     except Exception as e:
@@ -133,6 +138,7 @@ def create_cloudwatch_alarm(name, namespace, dimensions, threshold, alarm_type, 
         return 1
 
     return 0
+
 
 def list_alarms(client):
     """List all CloudWatch alarms."""
