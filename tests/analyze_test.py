@@ -45,7 +45,7 @@ class AnalyzeTest(unittest.TestCase):
             ]
         }
     
-    @mock.patch('click.prompt', side_effect=['CPUUtilization', 1, 2, 5])
+    @mock.patch('click.prompt', side_effect=['CPUUtilization', 1, 2, 5, 2])
     @mock.patch('click.confirm', side_effect=['Y'])
     def test_end_to_end(self, input, confirm):
 
